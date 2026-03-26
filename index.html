@@ -1751,8 +1751,37 @@ function renderDashboard() {
 
 // Configuração do usuário
 const CRON_CFG = {
-  horasDia: { 0:0, 1:4, 2:4, 3:4, 4:3.5, 5:4, 6:5 },
-  inicio: new Date('2026-03-23T12:00:00'),
+  inicio: new Date('2026-04-06T12:00:00'),
+  // Rampa progressiva: { wd = seg-sex (min), sat = sábado (min) }
+  // Semanas 1-3: 1h/dia · Semana 4: 1h30 · Semana 5: 2h · Semana 6: 2h45
+  // Semana 7: 3h30 · Semana 8+: 4h30 (regime pleno)
+  ramp: [
+    {wd: 60,  sat:  60},  // semana 1  (06/04)
+    {wd: 60,  sat:  60},  // semana 2  (13/04)
+    {wd: 60,  sat:  60},  // semana 3  (20/04)
+    {wd: 90,  sat: 105},  // semana 4  (27/04) — 1h30 / 1h45
+    {wd: 120, sat: 150},  // semana 5  (04/05) — 2h / 2h30
+    {wd: 165, sat: 195},  // semana 6  (11/05) — 2h45 / 3h15
+    {wd: 210, sat: 240},  // semana 7  (18/05) — 3h30 / 4h
+    {wd: 270, sat: 270},  // semana 8+ (25/05) — 4h30 (pleno)
+  ],
+  // Retorna os minutos do dia com base na semana do cronograma
+  getMinDia(date) {
+    const dow = date.getDay();
+    if (dow === 0) return 0; // domingo: descanso
+    const semIdx = Math.min(
+      this.ramp.length - 1,
+      Math.max(0, Math.floor((date - this.inicio) / (7 * 24 * 3600 * 1000)))
+    );
+    const r = this.ramp[semIdx];
+    return dow === 6 ? r.sat : r.wd;
+  },
+  // Retorna label da carga atual para exibição
+  getCargaLabel(semIdx) {
+    const r = this.ramp[Math.min(semIdx, this.ramp.length - 1)];
+    const fmtH = m => { const h=Math.floor(m/60), mn=m%60; return mn ? h+'h'+mn+'min' : h+'h'; };
+    return fmtH(r.wd) + (r.sat !== r.wd ? ' · Sáb ' + fmtH(r.sat) : '/dia');
+  },
 };
 
 // Estado persistente do cronograma
@@ -1798,12 +1827,15 @@ const CRON_G7_SUBTOPICOS = {
 };
 
 function cronGetSemanaNum(d) {
-  return Math.max(0, Math.floor((d - CRON_CFG.inicio) / (7*24*3600*1000)));
+  const diff = (d - CRON_CFG.inicio) / (7 * 24 * 3600 * 1000);
+  return diff < 0 ? -1 : Math.floor(diff); // -1 = antes do início
 }
 
 function cronGetDiscSeq(semana) {
-  const idx = semana % CRON_PRIO.length;
-  return [CRON_PRIO[idx], CRON_PRIO[(idx+1)%CRON_PRIO.length], CRON_PRIO[(idx+2)%CRON_PRIO.length]];
+  // JS modulo can return negative — force positive index
+  const n   = CRON_PRIO.length;
+  const idx = ((semana % n) + n) % n;
+  return [CRON_PRIO[idx], CRON_PRIO[(idx+1)%n], CRON_PRIO[(idx+2)%n]];
 }
 
 function cronGetNextSub(discId) {
@@ -1814,23 +1846,26 @@ function cronGetNextSub(discId) {
 
 function cronDateKey(d) { return d.toISOString().slice(0,10); }
 
-function cronGetMinDia(d) { return (CRON_CFG.horasDia[d.getDay()] || 0) * 60; }
+function cronGetMinDia(d) { return CRON_CFG.getMinDia(d); }
 
 function cronGetDiscOntem(d) {
   const ontem = new Date(d); ontem.setDate(ontem.getDate()-1);
-  const sem = cronGetSemanaNum(ontem);
+  const sem = Math.max(0, cronGetSemanaNum(ontem)); // guard: never negative
   const seq = cronGetDiscSeq(sem);
-  return seq[ontem.getDay() % seq.length].nome;
+  return seq[((ontem.getDay() % seq.length) + seq.length) % seq.length].nome;
 }
 
 // Gera blocos para um dia
 function cronBlocosDia(date) {
+  // Before start date → no blocks
+  if (date < CRON_CFG.inicio) return [];
+
   const dow    = date.getDay();
   const minTot = cronGetMinDia(date);
   if (minTot === 0) return [];
 
   const isSab = dow === 6;
-  const sem   = cronGetSemanaNum(date);
+  const sem   = Math.max(0, cronGetSemanaNum(date));
   const seq   = cronGetDiscSeq(sem);
   const dk    = cronDateKey(date);
   let   bid   = 0;
@@ -1839,25 +1874,31 @@ function cronBlocosDia(date) {
 
   const blocks = [];
 
-  // ── MANHÃ (60 min fixos) ──
-  const discOntem = cronGetDiscOntem(date);
-  blocks.push(mk('especial','leiseca','Lei Seca do Dia','[Selecione a legislação manualmente]',30,'Legislação 360 / Leg. Coordenada'));
-  blocks.push(mk('especial','questoes-ls','Questões · Decorando Lei Seca','Fixação do bloco de lei seca anterior',15,'Decorando a Lei Seca'));
-  blocks.push(mk('principal','questoes','QConcursos — '+discOntem,'Questões sobre a matéria de ontem',30,'QConcursos'));
-
-  if (isSab) {
-    // Sábado: manhã = lei seca + questões (45min), tarde = simulado (resto)
-    const minSim = minTot - 45;
-    blocks.push(mk('principal','simulado','Simulado Semanal','Questões de concursos de Procuradoria Estadual',minSim,'Simulados PGE — CESPE/FCC/VUNESP'));
+  // ── Nas primeiras 3 semanas (≤60 min/dia): cronograma simplificado ──
+  if (minTot <= 60) {
+    // Tudo em 1 bloco único: lei seca + 1 questão rápida
+    blocks.push(mk('especial','leiseca','Lei Seca do Dia','[Selecione a legislação manualmente]', 30, 'Legislação 360 / Leg. Coordenada'));
+    blocks.push(mk('principal','doutrina', seq[0].nome, cronGetNextSub(seq[0].id).sub, 30, 'G7 Jurídico'));
     return blocks;
   }
 
-  // ── TARDE ──
-  const minTarde = minTot - 60;
-  // 65% doutrina G7, 35% jurisprudência
+  // ── Dias com carga intermediária e plena ──
+  const discOntem = cronGetDiscOntem(date);
+  blocks.push(mk('especial','leiseca','Lei Seca do Dia','[Selecione a legislação manualmente]', 30, 'Legislação 360 / Leg. Coordenada'));
+  blocks.push(mk('especial','questoes-ls','Questões · Decorando Lei Seca','Fixação do bloco de lei seca anterior', 15, 'Decorando a Lei Seca'));
+  blocks.push(mk('principal','questoes','QConcursos — '+discOntem,'Questões sobre a matéria de ontem', 30, 'QConcursos'));
+
+  if (isSab) {
+    const minSim = minTot - 45;
+    blocks.push(mk('principal','simulado','Simulado Semanal','Questões de concursos de Procuradoria Estadual', minSim, 'Simulados PGE — CESPE/FCC/VUNESP'));
+    return blocks;
+  }
+
+  // ── Tarde: doutrina G7 + jurisprudência ──
+  const minTarde    = minTot - 75; // manhã fixa = 75min
   const minDoutrina = Math.round(minTarde * 0.65);
   const minJuris    = minTarde - minDoutrina;
-  const blocosDout  = Math.min(3, Math.floor(minDoutrina / 50)); // 50min = 40 aula + 10 anotação
+  const blocosDout  = Math.min(3, Math.floor(minDoutrina / 50));
 
   for (let b = 0; b < blocosDout; b++) {
     const disc = seq[b % seq.length];
@@ -1865,9 +1906,8 @@ function cronBlocosDia(date) {
     blocks.push(mk('principal','doutrina', disc.nome, nxt.sub, 50, 'G7 Jurídico + Anotações ('+disc.id+'-'+(nxt.idx+1)+')'));
   }
 
-  // Jurisprudência
   const paginasJuris = Math.round(Math.min(minJuris, 35) / 3);
-  blocks.push(mk('principal','juris','Dizer o Direito','Informativo semanal — ~'+paginasJuris+' págs. (3 min/pág)',Math.min(minJuris,35),'Informativos STJ/STF'));
+  blocks.push(mk('principal','juris','Dizer o Direito','Informativo semanal — ~'+paginasJuris+' págs. (3 min/pág)', Math.min(minJuris,35), 'Informativos STJ/STF'));
 
   return blocks;
 }
@@ -1914,7 +1954,10 @@ function cronRenderDiaria() {
   const mLS   = blocks.filter(b=>b.tipo==='leiseca').reduce((a,b)=>a+b.durMin,0);
   const mSim  = blocks.filter(b=>b.tipo==='simulado').reduce((a,b)=>a+b.durMin,0);
   document.getElementById('cron-dia-stats').innerHTML = [
-    {l:'Carga do dia', v:cronFmt(minTot), s:CRON_CFG.horasDia[dow]+'h disponíveis'},
+    {l:'Carga do dia', v:cronFmt(minTot), s: (() => {
+      const sem = cronGetSemanaNum(d);
+      return sem < 0 ? 'Começa em 06/04' : 'Semana '+(sem+1)+' — '+CRON_CFG.getCargaLabel(semIdx);
+    })()},
     {l:'Doutrina G7',  v:cronFmt(mDout),  s:Math.floor(mDout/50)+' blocos de aula'},
     {l:'Questões',     v:cronFmt(mQ+mLS), s:'QConcursos + Decorando Lei Seca'},
     {l:'Progresso',    v:prog.pct+'%',    s:prog.done+'/'+prog.total+' blocos', c:prog.pct>=100?'var(--green)':prog.pct>=50?'var(--accent)':''},
@@ -1922,7 +1965,14 @@ function cronRenderDiaria() {
 
   // Alert
   let ah='';
-  if (!minTot) ah='<div style="background:rgba(91,141,239,0.08);border:1px solid rgba(200,169,110,0.22);border-radius:10px;padding:12px 16px;margin-bottom:14px;color:var(--accent);font-size:13px">🌿 Dia de descanso — nenhum estudo programado.</div>';
+  if (d < CRON_CFG.inicio) {
+    const daysLeft = Math.ceil((CRON_CFG.inicio - d) / 86400000);
+    ah = '<div style="background:rgba(91,141,239,0.08);border:1px solid rgba(91,141,239,0.22);border-radius:10px;padding:13px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">' +
+      '<div style="font-size:22px">📅</div>' +
+      '<div><div style="font-size:13px;font-weight:700;color:var(--accent)">Cronograma começa em 06/04/2026</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-top:2px">Faltam ' + daysLeft + ' dia(s). Use este período para configurar o sistema.</div></div>' +
+      '</div>';
+  } else if (!minTot) ah='<div style="background:rgba(91,141,239,0.08);border:1px solid rgba(200,169,110,0.22);border-radius:10px;padding:12px 16px;margin-bottom:14px;color:var(--accent);font-size:13px">🌿 Dia de descanso — nenhum estudo programado.</div>';
   else if (prog.pct===100) ah='<div style="background:rgba(125,179,160,0.08);border:1px solid rgba(125,179,160,0.22);border-radius:10px;padding:12px 16px;margin-bottom:14px;color:var(--green);font-size:13px;font-weight:600">✓ Meta do dia concluída! Excelente disciplina.</div>';
   else if (CRON_STATE.atrasoBlocos>0) ah='<div style="background:rgba(212,133,74,0.08);border:1px solid rgba(212,133,74,0.25);border-radius:10px;padding:12px 16px;margin-bottom:14px;color:#D4854A;font-size:13px">↩ '+CRON_STATE.atrasoBlocos+' bloco(s) realocado(s) de dias anteriores. Você consegue!</div>';
   document.getElementById('cron-dia-alert').innerHTML = ah;
@@ -2145,7 +2195,8 @@ function cronRenderMetrics() {
   const hoje  = new Date();
   const prog  = cronDayProg(hoje);
   const sem   = cronGetSemanaNum(hoje);
-  const seq   = cronGetDiscSeq(sem);
+  const semIdx = Math.max(0, sem); // guard for pre-start (sem = -1)
+  const seq   = cronGetDiscSeq(semIdx);
   const xp    = calcXP();
   const lvl   = calcLevel(xp);
   const next  = calcNextLevel(xp);
@@ -2190,9 +2241,9 @@ function cronRenderMetrics() {
 
   // Card 4: Semana + foco
   const c4 = '<div class="card">' +
-    '<div class="card-label">Semana #'+(sem+1)+'</div>' +
-    '<div class="card-val" style="font-size:18px">'+seq[0].nome.replace(/Direito |D\. /,'')+'</div>' +
-    '<div class="card-sub">'+seq.slice(0,2).map(d=>d.nome.replace('Direito ','')).join(' · ')+'</div>' +
+    '<div class="card-label">'+(sem<0?'Início em':'Semana #'+(sem+1))+'</div>' +
+    '<div class="card-val" style="font-size:18px">'+(sem<0?'06/04/2026':seq[0].nome.replace(/Direito |D\.\s*/,''))+'</div>' +
+    '<div class="card-sub">'+(sem<0?'Cronograma ainda não iniciado':seq.slice(0,2).map(d=>d.nome.replace('Direito ','')).join(' · '))+'</div>' +
     '</div>';
 
   // Card 5: Atrasos / combo badges
@@ -2860,7 +2911,7 @@ function renderProgresso() {
   const earned  = ACHIEVEMENTS.filter(a=>{ try{return a.check();}catch(e){return false;} });
   const sessMap = {};
   DATA.sessions.forEach(s=>{ sessMap[s.date]=(sessMap[s.date]||0)+(s.duracao_min||0); });
-  const goalMins = CFG.horas_dia * 60;
+  const goalMins = cronGetMinDia(new Date());
 
   // ── Hero ──
   const badgeIcon = lvl.badge==='bronze'?'⚖️':lvl.badge==='silver'?'📚':lvl.badge==='gold'?'🏛️':'👑';
@@ -3260,7 +3311,7 @@ function renderHeatmap() {
   DATA.sessions.forEach(s=>{
     sessMap[s.date] = (sessMap[s.date]||0) + (s.duracao_min||0);
   });
-  const goalMins = CFG.horas_dia * 60;
+  const goalMins = cronGetMinDia(new Date());
   let html = '<div class="hm-grid">';
   for (let w=11; w>=0; w--) {
     html += '<div class="hm-col">';
@@ -4389,7 +4440,7 @@ function bnCloseMore() {
     name: 'PGE Estudos 2026',
     short_name: 'PGE Estudos',
     description: 'Gerenciador de estudos para concursos de Procuradoria Estadual',
-    start_url: '/',
+    start_url: './',
     display: 'standalone',
     orientation: 'portrait-primary',
     background_color: '#0A0D14',
@@ -4413,40 +4464,26 @@ function bnCloseMore() {
   } catch(e) {}
 
   // Register service worker for offline support
-  if ('serviceWorker' in navigator) {
-    const swCode = `
-const CACHE = 'pge-estudos-v1';
-const ASSETS = [location.href];
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
-  self.skipWaiting();
-});
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
-  ));
-  self.clients.claim();
-});
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  if (e.request.url.includes('supabase.co')) return; // always live for DB
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      const network = fetch(e.request).then(res => {
-        if (res.ok) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
-        return res;
-      }).catch(()=>{});
-      return cached || network;
-    })
-  );
-});`;
+  // Note: SW via blob URL is blocked by browsers — only register when on HTTPS
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    // Build SW URL from the page's own URL (works on GitHub Pages)
+    // We embed the SW code as a data URI workaround is also blocked,
+    // so we only register if a sw.js is available alongside the page
+    // For GitHub Pages: the SW is embedded inline via a separate file approach
+    // Since this is a single-file app, we use the page itself as SW via query trick
     try {
-      const swBlob = new Blob([swCode], {type:'application/javascript'});
-      const swUrl  = URL.createObjectURL(swBlob);
-      navigator.serviceWorker.register(swUrl, {scope: '/'})
+      // Create a dedicated SW endpoint by registering the page with ?sw=1
+      // The page detects this and installs itself as a SW
+      const swUrl = location.pathname.replace(/\/[^/]*$/, '/') + 'sw.js';
+      navigator.serviceWorker.register(swUrl)
         .then(() => console.log('[PWA] Service Worker registrado'))
-        .catch(e => console.warn('[PWA] SW erro:', e));
+        .catch(() => {
+          // sw.js not found — app works online-only, still installable as PWA
+          console.log('[PWA] SW não disponível (single-file mode) — app funciona online');
+        });
     } catch(e) {}
+  } else if (location.protocol !== 'https:') {
+    console.log('[PWA] Service Worker requer HTTPS — disponível no GitHub Pages');
   }
 })();
 

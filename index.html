@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="PGE Estudos">
 <meta name="theme-color" content="#0A0D14">
 <meta name="description" content="Gerenciador de estudos para concursos de Procuradoria Estadual">
-<link rel="manifest" href="#" id="pwa-manifest">
+<link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230A0D14'/><text y='.9em' font-size='70' x='12'>⚖️</text></svg>">
 <title>PGE Estudos 2026</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1956,7 +1956,7 @@ function cronRenderDiaria() {
   document.getElementById('cron-dia-stats').innerHTML = [
     {l:'Carga do dia', v:cronFmt(minTot), s: (() => {
       const sem = cronGetSemanaNum(d);
-      return sem < 0 ? 'Começa em 06/04' : 'Semana '+(sem+1)+' — '+CRON_CFG.getCargaLabel(semIdx);
+      return sem < 0 ? 'Começa em 06/04' : 'Semana '+(sem+1)+' — '+CRON_CFG.getCargaLabel(Math.max(0,sem));
     })()},
     {l:'Doutrina G7',  v:cronFmt(mDout),  s:Math.floor(mDout/50)+' blocos de aula'},
     {l:'Questões',     v:cronFmt(mQ+mLS), s:'QConcursos + Decorando Lei Seca'},
@@ -4432,58 +4432,13 @@ function bnCloseMore() {
 // bnSetActive is called by bnGo, not by navTo to avoid the hoisting bug
 
 // ══════════════════════════════════════════════════════════
-//  PWA — Service Worker + Web App Manifest
+//  PWA — Service Worker
 // ══════════════════════════════════════════════════════════
 (function initPWA() {
-  // Inline manifest via Blob URL
-  const manifest = {
-    name: 'PGE Estudos 2026',
-    short_name: 'PGE Estudos',
-    description: 'Gerenciador de estudos para concursos de Procuradoria Estadual',
-    start_url: './',
-    display: 'standalone',
-    orientation: 'portrait-primary',
-    background_color: '#0A0D14',
-    theme_color: '#0A0D14',
-    icons: [
-      {
-        src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='90' fill='%230A0D14'/><text y='.85em' font-size='360' x='60'>⚖️</text></svg>",
-        sizes: '512x512',
-        type: 'image/svg+xml',
-        purpose: 'any maskable'
-      }
-    ],
-    categories: ['education', 'productivity'],
-    lang: 'pt-BR'
-  };
-  try {
-    const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
-    const url  = URL.createObjectURL(blob);
-    const link = document.getElementById('pwa-manifest');
-    if (link) link.href = url;
-  } catch(e) {}
-
-  // Register service worker for offline support
-  // Note: SW via blob URL is blocked by browsers — only register when on HTTPS
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    // Build SW URL from the page's own URL (works on GitHub Pages)
-    // We embed the SW code as a data URI workaround is also blocked,
-    // so we only register if a sw.js is available alongside the page
-    // For GitHub Pages: the SW is embedded inline via a separate file approach
-    // Since this is a single-file app, we use the page itself as SW via query trick
-    try {
-      // Create a dedicated SW endpoint by registering the page with ?sw=1
-      // The page detects this and installs itself as a SW
-      const swUrl = location.pathname.replace(/\/[^/]*$/, '/') + 'sw.js';
-      navigator.serviceWorker.register(swUrl)
-        .then(() => console.log('[PWA] Service Worker registrado'))
-        .catch(() => {
-          // sw.js not found — app works online-only, still installable as PWA
-          console.log('[PWA] SW não disponível (single-file mode) — app funciona online');
-        });
-    } catch(e) {}
-  } else if (location.protocol !== 'https:') {
-    console.log('[PWA] Service Worker requer HTTPS — disponível no GitHub Pages');
+    navigator.serviceWorker.register('./sw.js')
+      .then(() => console.log('[PWA] Service Worker registrado com sucesso'))
+      .catch(e => console.log('[PWA] SW não disponível:', e.message));
   }
 })();
 

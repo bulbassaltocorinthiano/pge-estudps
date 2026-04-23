@@ -1881,6 +1881,8 @@ let cronWeekOff = 0;
 let cronMonOff  = 0;
 
 // Disciplinas prioritárias (rotação semanal)
+// Nota: 'portugues' adicionado para cobertura de Língua Portuguesa (CESPE — Conhecimentos Gerais).
+// Material-base: Adriana Figueiredo — "Gramática comentada com Interpretação de Textos para concursos".
 const CRON_PRIO = [
   {id:'const',     nome:'D. Constitucional',  cor:'#7DB3A0'},
   {id:'adm',       nome:'D. Administrativo',  cor:'#EFA96E'},
@@ -1889,6 +1891,7 @@ const CRON_PRIO = [
   {id:'trib',      nome:'D. Tributário',      cor:'#6DB8A0'},
   {id:'civil',     nome:'D. Civil',           cor:'#C8A96E'},
   {id:'proc-civil',nome:'D. Proc. Civil',     cor:'#7B8FBD'},
+  {id:'portugues', nome:'Língua Portuguesa',  cor:'#B48BC4'},
 ];
 
 const CRON_G7_SUBTOPICOS = {
@@ -1901,6 +1904,10 @@ const CRON_G7_SUBTOPICOS = {
   'proc-penal':['Noções e Inquérito Policial','Ação Penal','Competência Criminal','Teoria Geral das Provas','Provas em Espécie','Medidas Cautelares Pessoais','Procedimento Comum','Tribunal do Júri','Sentença e Nulidades','Recursos','Habeas Corpus e Revisão Criminal'],
   fin:['Atividade Financeira do Estado','Orçamento Público — Conceito e Princípios','Leis Orçamentárias (PPA, LDO, LOA)','Ciclo Orçamentário','Receita Pública — Classificação','Receita Pública — Estágios','Despesa Pública — Classificação','Despesa Pública — Estágios','Restos a Pagar e Despesas de Exercícios Anteriores','LRF — Gestão Fiscal Responsável','LRF — Limites de Gasto com Pessoal','LRF — Dívida Pública e Operações de Crédito','LRF — Transparência e Controle','Precatórios e RPV','Repartição de Receitas Tributárias','Fundos Públicos','Controle da Execução Orçamentária','Crimes contra a Lei Orçamentária'],
   controle:['Controle da Administração Pública — Panorama','Controle Interno','Controle Externo — Conceito e Natureza','TCU — Competências Constitucionais (art. 71)','TCE — Competências (simetria com TCU)','TCE-MA — Lei Orgânica e Regimento Interno','Julgamento de Contas de Governo vs Contas de Gestão','Responsabilização de Agentes Públicos','Auditoria Governamental — Tipos','Auditoria Governamental — NAGs','Processo de Contas no TCE','Tomada de Contas Especial','Sanções aplicáveis pelo TCE','Recursos no Processo de Contas','Fiscalização de Licitações e Contratos','Fiscalização de Renúncia de Receita','Relação TCE × Poder Judiciário','Jurisprudência STF/STJ sobre Tribunais de Contas'],
+  // Português — ementa padrão CESPE para cargos jurídicos. Material-base sugerido: Adriana Figueiredo.
+  // IMPORTANTE: os subtópicos abaixo seguem a ordem da ementa CESPE. Quando Vinícius declarar o sumário
+  // exato da obra da Adriana Figueiredo, basta reordenar esta lista para bater com a sequência do livro.
+  portugues:['Compreensão e Interpretação de Textos — Estratégias de Leitura','Tipos e Gêneros Textuais','Ortografia Oficial','Coesão Textual — Referenciação, Substituição e Repetição','Coesão Textual — Conectores e Sequenciação','Emprego de Tempos e Modos Verbais','Classes de Palavras — Substantivo, Adjetivo, Artigo','Classes de Palavras — Pronomes e Numerais','Classes de Palavras — Verbo, Advérbio, Preposição, Conjunção','Relações de Coordenação entre Orações e Termos','Relações de Subordinação entre Orações e Termos','Emprego dos Sinais de Pontuação','Concordância Verbal','Concordância Nominal','Regência Verbal','Regência Nominal','Emprego do Sinal Indicativo de Crase','Colocação Pronominal — Próclise, Mesóclise e Ênclise','Significação das Palavras — Sinonímia, Antonímia, Polissemia','Reescrita de Frases e Parágrafos'],
 };
 
 function cronGetSemanaNum(d) {
@@ -1980,7 +1987,10 @@ function cronBlocosDia(date) {
   for (let b = 0; b < blocosDout; b++) {
     const disc = seq[b % seq.length];
     const nxt  = cronGetNextSub(disc.id);
-    blocks.push(mk('principal','doutrina', disc.nome, nxt.sub, 50, 'G7 Jurídico + Anotações ('+disc.id+'-'+(nxt.idx+1)+')'));
+    const fonteDisc = (disc.id === 'portugues')
+      ? 'Adriana Figueiredo — Gramática + Interpretação (port-' + (nxt.idx+1) + ')'
+      : 'G7 Jurídico + Anotações (' + disc.id + '-' + (nxt.idx+1) + ')';
+    blocks.push(mk('principal','doutrina', disc.nome, nxt.sub, 50, fonteDisc));
   }
 
   const paginasJuris = Math.round(Math.min(minJuris, 35) / 3);
@@ -3451,6 +3461,7 @@ function renderConquistas() {
     {id:'civil', nome:'D. Civil',          total:28, cor:'#C8A96E'},
     {id:'proc-civil', nome:'D. Proc. Civil', total:22, cor:'#7B8FBD'},
     {id:'trib',  nome:'D. Tributário',     total:9,  cor:'#6DB8A0'},
+    {id:'portugues', nome:'Língua Portuguesa', total:20, cor:'#B48BC4'},
   ];
   document.getElementById('conquis-ementa').innerHTML = prioDiscs.map(d=>{
     const prog = CRON_STATE && CRON_STATE.g7prog ? (CRON_STATE.g7prog[d.id]||0) : 0;
@@ -4165,6 +4176,28 @@ const TOPICS_MAP = {
     'Procedimento Sumaríssimo e Sumário',
     'Teoria Geral dos Recursos Trabalhistas',
     'Embargos de Declaração, Recurso Ordinário e Agravo',
+  ],
+  'Língua Portuguesa': [
+    'Compreensão e Interpretação de Textos — Estratégias de Leitura',
+    'Tipos e Gêneros Textuais',
+    'Ortografia Oficial',
+    'Coesão Textual — Referenciação, Substituição e Repetição',
+    'Coesão Textual — Conectores e Sequenciação',
+    'Emprego de Tempos e Modos Verbais',
+    'Classes de Palavras — Substantivo, Adjetivo, Artigo',
+    'Classes de Palavras — Pronomes e Numerais',
+    'Classes de Palavras — Verbo, Advérbio, Preposição, Conjunção',
+    'Relações de Coordenação entre Orações e Termos',
+    'Relações de Subordinação entre Orações e Termos',
+    'Emprego dos Sinais de Pontuação',
+    'Concordância Verbal',
+    'Concordância Nominal',
+    'Regência Verbal',
+    'Regência Nominal',
+    'Emprego do Sinal Indicativo de Crase',
+    'Colocação Pronominal — Próclise, Mesóclise e Ênclise',
+    'Significação das Palavras — Sinonímia, Antonímia, Polissemia',
+    'Reescrita de Frases e Parágrafos',
   ],
 };
 

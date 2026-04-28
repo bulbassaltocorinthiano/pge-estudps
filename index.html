@@ -738,6 +738,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
       <button class="nav-item" onclick="navTo('questoes')"><div class="nav-dot"></div>Questões <span class="nav-badge" id="badge-q" style="display:none">!</span></button>
       <button class="nav-item" onclick="navTo('revisao')"><div class="nav-dot"></div>Revisão · Anki</button>
       <button class="nav-item" onclick="navTo('juris')"><div class="nav-dot"></div>Jurisprudência <span class="nav-badge" id="badge-j" style="display:none">!</span></button>
+      <button class="nav-item" onclick="navTo('conteudos')"><div class="nav-dot"></div>Conteúdos</button>
       <button class="nav-item" id="nav-stats" onclick="navToStats(event)"><div class="nav-dot"></div>Estatísticas</button>
       <div class="nav-section">Sistema</div>
       <button class="nav-item" onclick="navTo('config')"><div class="nav-dot"></div>Configurações</button>
@@ -1171,6 +1172,56 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
         </div>
       </div>
     </div>
+    <!-- CONTEÚDOS — COBERTURA DA EMENTA -->
+    <div class="page" id="page-conteudos">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+        <div>
+          <div class="page-tag">Módulo 07 — Cobertura</div>
+          <div class="page-title">Conteúdos da <em>Ementa</em></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;max-width:560px">Lista de todas as matérias e tópicos do programa, com horas estudadas e desempenho em questões. Sempre marque o <strong style="color:var(--text)">tema</strong> ao registrar estudo ou questões para alimentar este painel.</div>
+        </div>
+      </div>
+
+      <!-- HERO STATS -->
+      <div class="grid g4" id="cont-hero" style="margin-bottom:14px"></div>
+
+      <!-- FILTROS -->
+      <div class="panel">
+        <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+          <div style="flex:1;min-width:180px">
+            <label class="mlabel">Buscar tópico ou matéria</label>
+            <input class="minput" id="cont-search" type="text" placeholder="Ex: prescrição, ICMS, posse..." oninput="renderConteudos()"/>
+          </div>
+          <div style="min-width:200px">
+            <label class="mlabel">Matéria</label>
+            <select class="mselect" id="cont-disc" onchange="renderConteudos()">
+              <option value="">— Todas —</option>
+            </select>
+          </div>
+          <div style="min-width:180px">
+            <label class="mlabel">Ordenar por</label>
+            <select class="mselect" id="cont-sort" onchange="renderConteudos()">
+              <option value="ementa">Ordem da ementa</option>
+              <option value="horas-desc">Mais horas estudadas</option>
+              <option value="horas-asc">Menos horas estudadas</option>
+              <option value="acerto-asc">Pior desempenho primeiro</option>
+              <option value="acerto-desc">Melhor desempenho primeiro</option>
+              <option value="questoes-desc">Mais questões resolvidas</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;padding-bottom:6px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer">
+              <input type="checkbox" id="cont-hide-zero" onchange="renderConteudos()" style="cursor:pointer"/>
+              Ocultar zerados
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- LISTA POR MATÉRIA -->
+      <div id="cont-list"></div>
+    </div>
+
   </main>
 </div>
 
@@ -1686,6 +1737,7 @@ async function loadApp() {
     renderQuestoes();
     renderRevisao();
     renderJuris();
+    renderConteudos();
     renderConfigPage();
     updateBadges();
 
@@ -1826,7 +1878,7 @@ function renderDashboard() {
 
 // Configuração do usuário
 const CRON_CFG = {
-  inicio: new Date('2026-04-26T12:00:00'),
+  inicio: new Date('2026-04-22T12:00:00'),
   // Rampa progressiva: { wd = seg-sex (min), sat = sábado (min) }
   // Semanas 1-3: 1h/dia · Semana 4: 1h30 · Semana 5: 2h · Semana 6: 2h45
   // Semana 7: 3h30 · Semana 8+: 4h30 (regime pleno)
@@ -1881,8 +1933,6 @@ let cronWeekOff = 0;
 let cronMonOff  = 0;
 
 // Disciplinas prioritárias (rotação semanal)
-// Nota: 'portugues' adicionado para cobertura de Língua Portuguesa (CESPE — Conhecimentos Gerais).
-// Material-base: Adriana Figueiredo — "Gramática comentada com Interpretação de Textos para concursos".
 const CRON_PRIO = [
   {id:'const',     nome:'D. Constitucional',  cor:'#7DB3A0'},
   {id:'adm',       nome:'D. Administrativo',  cor:'#EFA96E'},
@@ -1891,7 +1941,6 @@ const CRON_PRIO = [
   {id:'trib',      nome:'D. Tributário',      cor:'#6DB8A0'},
   {id:'civil',     nome:'D. Civil',           cor:'#C8A96E'},
   {id:'proc-civil',nome:'D. Proc. Civil',     cor:'#7B8FBD'},
-  {id:'portugues', nome:'Língua Portuguesa',  cor:'#B48BC4'},
 ];
 
 const CRON_G7_SUBTOPICOS = {
@@ -1904,10 +1953,6 @@ const CRON_G7_SUBTOPICOS = {
   'proc-penal':['Noções e Inquérito Policial','Ação Penal','Competência Criminal','Teoria Geral das Provas','Provas em Espécie','Medidas Cautelares Pessoais','Procedimento Comum','Tribunal do Júri','Sentença e Nulidades','Recursos','Habeas Corpus e Revisão Criminal'],
   fin:['Atividade Financeira do Estado','Orçamento Público — Conceito e Princípios','Leis Orçamentárias (PPA, LDO, LOA)','Ciclo Orçamentário','Receita Pública — Classificação','Receita Pública — Estágios','Despesa Pública — Classificação','Despesa Pública — Estágios','Restos a Pagar e Despesas de Exercícios Anteriores','LRF — Gestão Fiscal Responsável','LRF — Limites de Gasto com Pessoal','LRF — Dívida Pública e Operações de Crédito','LRF — Transparência e Controle','Precatórios e RPV','Repartição de Receitas Tributárias','Fundos Públicos','Controle da Execução Orçamentária','Crimes contra a Lei Orçamentária'],
   controle:['Controle da Administração Pública — Panorama','Controle Interno','Controle Externo — Conceito e Natureza','TCU — Competências Constitucionais (art. 71)','TCE — Competências (simetria com TCU)','TCE-MA — Lei Orgânica e Regimento Interno','Julgamento de Contas de Governo vs Contas de Gestão','Responsabilização de Agentes Públicos','Auditoria Governamental — Tipos','Auditoria Governamental — NAGs','Processo de Contas no TCE','Tomada de Contas Especial','Sanções aplicáveis pelo TCE','Recursos no Processo de Contas','Fiscalização de Licitações e Contratos','Fiscalização de Renúncia de Receita','Relação TCE × Poder Judiciário','Jurisprudência STF/STJ sobre Tribunais de Contas'],
-  // Português — ementa padrão CESPE para cargos jurídicos. Material-base sugerido: Adriana Figueiredo.
-  // IMPORTANTE: os subtópicos abaixo seguem a ordem da ementa CESPE. Quando Vinícius declarar o sumário
-  // exato da obra da Adriana Figueiredo, basta reordenar esta lista para bater com a sequência do livro.
-  portugues:['Compreensão e Interpretação de Textos — Estratégias de Leitura','Tipos e Gêneros Textuais','Ortografia Oficial','Coesão Textual — Referenciação, Substituição e Repetição','Coesão Textual — Conectores e Sequenciação','Emprego de Tempos e Modos Verbais','Classes de Palavras — Substantivo, Adjetivo, Artigo','Classes de Palavras — Pronomes e Numerais','Classes de Palavras — Verbo, Advérbio, Preposição, Conjunção','Relações de Coordenação entre Orações e Termos','Relações de Subordinação entre Orações e Termos','Emprego dos Sinais de Pontuação','Concordância Verbal','Concordância Nominal','Regência Verbal','Regência Nominal','Emprego do Sinal Indicativo de Crase','Colocação Pronominal — Próclise, Mesóclise e Ênclise','Significação das Palavras — Sinonímia, Antonímia, Polissemia','Reescrita de Frases e Parágrafos'],
 };
 
 function cronGetSemanaNum(d) {
@@ -1987,10 +2032,7 @@ function cronBlocosDia(date) {
   for (let b = 0; b < blocosDout; b++) {
     const disc = seq[b % seq.length];
     const nxt  = cronGetNextSub(disc.id);
-    const fonteDisc = (disc.id === 'portugues')
-      ? 'Adriana Figueiredo — Gramática + Interpretação (port-' + (nxt.idx+1) + ')'
-      : 'G7 Jurídico + Anotações (' + disc.id + '-' + (nxt.idx+1) + ')';
-    blocks.push(mk('principal','doutrina', disc.nome, nxt.sub, 50, fonteDisc));
+    blocks.push(mk('principal','doutrina', disc.nome, nxt.sub, 50, 'G7 Jurídico + Anotações ('+disc.id+'-'+(nxt.idx+1)+')'));
   }
 
   const paginasJuris = Math.round(Math.min(minJuris, 35) / 3);
@@ -3461,7 +3503,6 @@ function renderConquistas() {
     {id:'civil', nome:'D. Civil',          total:28, cor:'#C8A96E'},
     {id:'proc-civil', nome:'D. Proc. Civil', total:22, cor:'#7B8FBD'},
     {id:'trib',  nome:'D. Tributário',     total:9,  cor:'#6DB8A0'},
-    {id:'portugues', nome:'Língua Portuguesa', total:20, cor:'#B48BC4'},
   ];
   document.getElementById('conquis-ementa').innerHTML = prioDiscs.map(d=>{
     const prog = CRON_STATE && CRON_STATE.g7prog ? (CRON_STATE.g7prog[d.id]||0) : 0;
@@ -4177,28 +4218,6 @@ const TOPICS_MAP = {
     'Teoria Geral dos Recursos Trabalhistas',
     'Embargos de Declaração, Recurso Ordinário e Agravo',
   ],
-  'Língua Portuguesa': [
-    'Compreensão e Interpretação de Textos — Estratégias de Leitura',
-    'Tipos e Gêneros Textuais',
-    'Ortografia Oficial',
-    'Coesão Textual — Referenciação, Substituição e Repetição',
-    'Coesão Textual — Conectores e Sequenciação',
-    'Emprego de Tempos e Modos Verbais',
-    'Classes de Palavras — Substantivo, Adjetivo, Artigo',
-    'Classes de Palavras — Pronomes e Numerais',
-    'Classes de Palavras — Verbo, Advérbio, Preposição, Conjunção',
-    'Relações de Coordenação entre Orações e Termos',
-    'Relações de Subordinação entre Orações e Termos',
-    'Emprego dos Sinais de Pontuação',
-    'Concordância Verbal',
-    'Concordância Nominal',
-    'Regência Verbal',
-    'Regência Nominal',
-    'Emprego do Sinal Indicativo de Crase',
-    'Colocação Pronominal — Próclise, Mesóclise e Ênclise',
-    'Significação das Palavras — Sinonímia, Antonímia, Polissemia',
-    'Reescrita de Frases e Parágrafos',
-  ],
 };
 
 // Populate topic select when discipline changes
@@ -4288,6 +4307,230 @@ function renderTopicAnalysis() {
   }).join('');
 }
 
+// ═══════════════════════════════════════════════════════════
+//  MÓDULO CONTEÚDOS — Cobertura da ementa
+//  Cruza TOPICS_MAP × DATA.sessions (horas) × DATA.questions (desempenho)
+// ═══════════════════════════════════════════════════════════
+
+// Constrói o índice completo: para cada matéria do TOPICS_MAP, todos os tópicos
+// + horas estudadas + estatísticas de questões. Tópicos registrados FORA do
+// TOPICS_MAP (legado/digitação livre) entram com flag `extra:true`.
+function getCoverageStats() {
+  const result = {}; // { disc: { topics: [...], totalMin, totalQ, totalCorr, withStudy, withQ } }
+
+  // 1. Inicializa todas as matérias e tópicos do TOPICS_MAP
+  Object.keys(TOPICS_MAP).forEach(disc => {
+    result[disc] = {
+      disc,
+      topics: TOPICS_MAP[disc].map(tema => ({
+        disc, tema, extra: false,
+        minutos: 0, sessions: 0,
+        qTotal: 0, qCorretas: 0, qSessions: 0,
+      })),
+      totalMin: 0, totalQ: 0, totalCorr: 0,
+      withStudy: 0, withQ: 0,
+    };
+  });
+
+  // Helper para buscar/criar entrada (lida com tópicos extras)
+  const findOrAdd = (disc, tema) => {
+    if (!result[disc]) {
+      result[disc] = {
+        disc, topics: [],
+        totalMin: 0, totalQ: 0, totalCorr: 0,
+        withStudy: 0, withQ: 0,
+        unmapped: true,
+      };
+    }
+    let t = result[disc].topics.find(x => x.tema === tema);
+    if (!t) {
+      t = { disc, tema, extra: true, minutos: 0, sessions: 0, qTotal: 0, qCorretas: 0, qSessions: 0 };
+      result[disc].topics.push(t);
+    }
+    return t;
+  };
+
+  // 2. Soma horas (DATA.sessions com tema preenchido)
+  (DATA.sessions || []).forEach(s => {
+    if (!s.tema || !s.tema.trim() || !s.disciplina) return;
+    const t = findOrAdd(s.disciplina, s.tema);
+    t.minutos += (s.duracao_min || 0);
+    t.sessions += 1;
+  });
+
+  // 3. Soma questões (DATA.questions com tema preenchido)
+  (DATA.questions || []).forEach(q => {
+    if (!q.tema || !q.tema.trim() || !q.disciplina) return;
+    const t = findOrAdd(q.disciplina, q.tema);
+    t.qTotal += (q.total || 0);
+    t.qCorretas += (q.corretas || 0);
+    t.qSessions += 1;
+  });
+
+  // 4. Agregados por matéria + acerto% por tópico
+  Object.values(result).forEach(d => {
+    d.topics.forEach(t => {
+      t.acerto = t.qTotal > 0 ? Math.round(t.qCorretas / t.qTotal * 100) : null;
+      t.hasStudy = t.minutos > 0;
+      t.hasQ = t.qTotal > 0;
+      // Status: zero | estudo | revisar | dominado
+      if (!t.hasStudy && !t.hasQ) t.status = 'zero';
+      else if (t.hasQ && t.qTotal >= 5 && t.acerto >= 75) t.status = 'dominado';
+      else if (t.hasQ && t.acerto !== null && t.acerto < 75) t.status = 'revisar';
+      else t.status = 'estudo';
+    });
+    d.totalMin   = d.topics.reduce((a,t) => a + t.minutos, 0);
+    d.totalQ     = d.topics.reduce((a,t) => a + t.qTotal, 0);
+    d.totalCorr  = d.topics.reduce((a,t) => a + t.qCorretas, 0);
+    d.withStudy  = d.topics.filter(t => t.hasStudy).length;
+    d.withQ      = d.topics.filter(t => t.hasQ).length;
+    d.totalTopics = d.topics.length;
+    d.acertoMedio = d.totalQ > 0 ? Math.round(d.totalCorr / d.totalQ * 100) : null;
+    d.coveragePct = d.totalTopics > 0 ? Math.round(d.withStudy / d.totalTopics * 100) : 0;
+  });
+
+  return result;
+}
+
+function contStatusBadge(status) {
+  const map = {
+    zero:     { bg:'rgba(140,140,160,0.10)', col:'var(--muted)',  bd:'rgba(140,140,160,0.20)', icon:'○', label:'sem registro' },
+    estudo:   { bg:'rgba(91,141,239,0.10)',  col:'var(--accent)', bd:'rgba(91,141,239,0.25)',  icon:'◐', label:'em estudo' },
+    revisar:  { bg:'rgba(192,120,120,0.12)', col:'var(--red)',    bd:'rgba(192,120,120,0.25)', icon:'↩', label:'revisar' },
+    dominado: { bg:'rgba(82,169,139,0.12)',  col:'var(--green)',  bd:'rgba(82,169,139,0.25)',  icon:'✓', label:'dominado' },
+  };
+  const s = map[status] || map.zero;
+  return '<div style="background:' + s.bg + ';color:' + s.col + ';border:1px solid ' + s.bd + ';font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0">' + s.icon + ' ' + s.label + '</div>';
+}
+
+function renderConteudos() {
+  const listEl = document.getElementById('cont-list');
+  const heroEl = document.getElementById('cont-hero');
+  const discSel = document.getElementById('cont-disc');
+  if (!listEl || !heroEl) return;
+
+  const cov = getCoverageStats();
+  const allDiscs = Object.keys(cov).sort((a,b) => a.localeCompare(b,'pt-BR'));
+
+  // Popula select de matérias (uma vez)
+  if (discSel && discSel.options.length <= 1) {
+    discSel.innerHTML = '<option value="">— Todas —</option>' +
+      allDiscs.map(d => '<option value="' + d.replace(/"/g,'&quot;') + '">' + d + '</option>').join('');
+  }
+
+  // ─── HERO STATS ───
+  const allTopics = allDiscs.flatMap(d => cov[d].topics);
+  const totalTop = allTopics.length;
+  const studied  = allTopics.filter(t => t.hasStudy).length;
+  const withQ    = allTopics.filter(t => t.hasQ).length;
+  const review   = allTopics.filter(t => t.status === 'revisar').length;
+  const totalH   = Math.round(allTopics.reduce((a,t) => a + t.minutos, 0) / 60 * 10) / 10;
+  const covPct   = totalTop > 0 ? Math.round(studied / totalTop * 100) : 0;
+
+  heroEl.innerHTML =
+    '<div class="card"><div class="card-label">Cobertura</div>' +
+      '<div class="card-value">' + covPct + '<span style="font-size:14px;color:var(--muted)">%</span></div>' +
+      '<div class="card-sub">' + studied + ' de ' + totalTop + ' tópicos</div></div>' +
+    '<div class="card"><div class="card-label">Horas registradas</div>' +
+      '<div class="card-value">' + totalH + '<span style="font-size:14px;color:var(--muted)">h</span></div>' +
+      '<div class="card-sub">' + allDiscs.length + ' matérias</div></div>' +
+    '<div class="card"><div class="card-label">Tópicos com questões</div>' +
+      '<div class="card-value">' + withQ + '</div>' +
+      '<div class="card-sub">' + (totalTop > 0 ? Math.round(withQ/totalTop*100) : 0) + '% testados</div></div>' +
+    '<div class="card"><div class="card-label">A revisar</div>' +
+      '<div class="card-value" style="color:' + (review > 0 ? 'var(--red)' : 'var(--green)') + '">' + review + '</div>' +
+      '<div class="card-sub">acerto &lt; 75%</div></div>';
+
+  // ─── FILTROS ───
+  const search   = (document.getElementById('cont-search')?.value || '').toLowerCase().trim();
+  const filtDisc = document.getElementById('cont-disc')?.value || '';
+  const sortBy   = document.getElementById('cont-sort')?.value || 'ementa';
+  const hideZero = document.getElementById('cont-hide-zero')?.checked || false;
+
+  let discsToShow = filtDisc ? [filtDisc] : allDiscs;
+
+  // ─── RENDER POR MATÉRIA ───
+  const html = discsToShow.map(disc => {
+    const d = cov[disc];
+    if (!d) return '';
+
+    let topics = d.topics.slice();
+
+    if (search) {
+      topics = topics.filter(t =>
+        t.tema.toLowerCase().includes(search) || disc.toLowerCase().includes(search));
+    }
+    if (hideZero) topics = topics.filter(t => t.hasStudy || t.hasQ);
+
+    // Ordenação
+    if (sortBy === 'horas-desc')      topics.sort((a,b) => b.minutos - a.minutos);
+    else if (sortBy === 'horas-asc')  topics.sort((a,b) => a.minutos - b.minutos);
+    else if (sortBy === 'acerto-asc') topics.sort((a,b) => (a.acerto ?? 999) - (b.acerto ?? 999));
+    else if (sortBy === 'acerto-desc')topics.sort((a,b) => (b.acerto ?? -1) - (a.acerto ?? -1));
+    else if (sortBy === 'questoes-desc') topics.sort((a,b) => b.qTotal - a.qTotal);
+    // ementa: ordem original já é a do TOPICS_MAP
+
+    if (!topics.length) return '';
+
+    const acertoMedCol = d.acertoMedio === null ? 'var(--muted)' : d.acertoMedio >= 75 ? 'var(--green)' : d.acertoMedio >= 55 ? 'var(--accent)' : 'var(--red)';
+    const covBarCol = d.coveragePct >= 75 ? 'var(--green)' : d.coveragePct >= 40 ? 'var(--accent)' : d.coveragePct > 0 ? 'var(--orange)' : 'var(--muted)';
+
+    return '<div class="panel" style="margin-bottom:14px">' +
+      '<div class="panel-head" style="flex-wrap:wrap;gap:8px">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div class="panel-title">' + disc + (d.unmapped ? ' <span style="font-size:9px;color:var(--orange);font-family:var(--mono);margin-left:6px">[não mapeada]</span>' : '') + '</div>' +
+          '<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:2px">' +
+            d.withStudy + '/' + d.totalTopics + ' tópicos · ' + fmtMins(d.totalMin) + ' · ' +
+            (d.totalQ > 0 ? d.totalQ + ' questões · <span style="color:' + acertoMedCol + '">' + d.acertoMedio + '% médio</span>' : '0 questões') +
+          '</div>' +
+        '</div>' +
+        '<div style="width:90px;flex-shrink:0">' +
+          '<div class="pbar"><div class="pbar-fill" style="width:' + d.coveragePct + '%;background:' + covBarCol + '"></div></div>' +
+          '<div style="font-family:var(--mono);font-size:9px;color:var(--muted);text-align:right;margin-top:2px">cobertura</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="panel-body" style="padding-top:6px">' +
+        topics.map(t => {
+          const accCol = t.acerto === null ? 'var(--muted)' : t.acerto >= 75 ? 'var(--green)' : t.acerto >= 55 ? 'var(--accent)' : 'var(--red)';
+          const horasStr = t.minutos > 0 ? fmtMins(t.minutos) : '—';
+          const qStr = t.qTotal > 0
+            ? '<span style="color:var(--text)">' + t.qTotal + 'q</span> · <span style="color:' + accCol + '">' + t.acerto + '%</span>'
+            : '<span style="color:var(--muted)">— sem questões</span>';
+          const barWidth = t.acerto === null ? 0 : t.acerto;
+          const barCol   = t.acerto === null ? 'var(--bg3)' : accCol;
+
+          return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                t.tema + (t.extra ? ' <span style="font-size:9px;color:var(--orange);font-family:var(--mono)">[extra]</span>' : '') +
+              '</div>' +
+              '<div style="font-size:10.5px;color:var(--muted);margin-top:2px;font-family:var(--mono)">' +
+                (t.sessions > 0 ? t.sessions + ' sessão' + (t.sessions > 1 ? 'ões' : '') : '0 sessões') +
+                (t.qSessions > 0 ? ' · ' + t.qSessions + ' rodada' + (t.qSessions > 1 ? 's' : '') + ' de questões' : '') +
+              '</div>' +
+            '</div>' +
+            '<div style="width:75px;flex-shrink:0;text-align:right;font-family:var(--mono);font-size:11px;color:' + (t.minutos > 0 ? 'var(--text)' : 'var(--muted)') + '">' +
+              horasStr +
+            '</div>' +
+            '<div style="width:110px;flex-shrink:0">' +
+              '<div style="font-family:var(--mono);font-size:10.5px;text-align:right">' + qStr + '</div>' +
+              (t.qTotal > 0
+                ? '<div class="pbar" style="margin-top:3px"><div class="pbar-fill" style="width:' + barWidth + '%;background:' + barCol + '"></div></div>'
+                : '<div style="height:5px;margin-top:3px"></div>') +
+            '</div>' +
+            contStatusBadge(t.status) +
+          '</div>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  }).filter(Boolean).join('');
+
+  listEl.innerHTML = html ||
+    '<div class="panel"><div class="panel-body" style="text-align:center;padding:40px 20px;color:var(--muted);font-size:13px">' +
+      'Nenhum tópico corresponde aos filtros aplicados.' +
+    '</div></div>';
+}
+
 async function saveLog() {
   const fonte = document.getElementById('log-fonte');
   const row = {
@@ -4300,7 +4543,7 @@ async function saveLog() {
     notas:       document.getElementById('log-nota').value,
     tema:        document.getElementById('log-tema')?.value || null,
   };
-  await dbInsert('study_sessions', row, 'log-btn', 'Salvar', s => { DATA.sessions.unshift(s); renderDashboard(); gmCheckProgress(document.getElementById('modal-log')); }, 'Estudo registrado!');
+  await dbInsert('study_sessions', row, 'log-btn', 'Salvar', s => { DATA.sessions.unshift(s); renderDashboard(); renderConteudos(); gmCheckProgress(document.getElementById('modal-log')); }, 'Estudo registrado!');
   closeModal('modal-log');
 }
 
@@ -4320,6 +4563,7 @@ async function saveQ() {
   await dbInsert('question_sessions', row, 'q-btn', 'Salvar', s => {
     DATA.questions.unshift(s);
     renderQuestoes();
+    renderConteudos();
     updateBadges();
     gmCheckProgress(document.getElementById('modal-q'));
   }, row.acerto + '% de acerto registrado!');
@@ -4481,7 +4725,7 @@ function toast(icon, msg, color) {
 //  BOTTOM NAVIGATION — Mobile Controller
 // ══════════════════════════════════════════════════════════
 const BN_PAGES = ['dashboard','cronograma','questoes','g7'];
-const BN_MORE  = ['juris','stats','revisao','config'];
+const BN_MORE  = ['juris','conteudos','stats','revisao','config'];
 
 function bnGo(page) {
   bnCloseMore();
@@ -4966,6 +5210,7 @@ window.addEventListener('DOMContentLoaded', boot);
 <div class="bn-overlay" id="bn-overlay" onclick="bnCloseMore()"></div>
 <div class="bn-more-menu" id="bn-more-menu">
   <button class="bn-more-item" id="bnm-juris"   onclick="bnGo('juris')">  <span class="bn-more-icon">📰</span>Jurisprudência</button>
+  <button class="bn-more-item" id="bnm-conteudos" onclick="bnGo('conteudos')"><span class="bn-more-icon">📚</span>Conteúdos</button>
   <button class="bn-more-item" id="bnm-stats"   onclick="bnGoStats()">    <span class="bn-more-icon">📊</span>Estatísticas</button>
   <button class="bn-more-item" id="bnm-revisao" onclick="bnGo('revisao')"><span class="bn-more-icon">🃏</span>Revisão & Progresso</button>
   <button class="bn-more-item" id="bnm-config"  onclick="bnGo('config')"> <span class="bn-more-icon">⚙️</span>Configurações</button>

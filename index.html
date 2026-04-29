@@ -1740,6 +1740,7 @@ async function loadApp() {
     renderConteudos();
     renderConfigPage();
     updateBadges();
+    renderSidebarXP();
 
     showScreen('app');
   } catch(e) {
@@ -1797,6 +1798,8 @@ function renderDashboard() {
   const greeting = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
   document.getElementById('dash-tag').textContent = greeting + ' — ' + formatDate(today);
   document.getElementById('dash-cycle').textContent = getCycleLabel();
+  // Sincroniza widget XP da sidebar
+  renderSidebarXP();
   // XP mini widget on dashboard
   const _xp = calcXP(); const _lvl = calcLevel(_xp); const _next = calcNextLevel(_xp);
   const _pct = _next.xpNeeded > _lvl.xpNeeded ? Math.min(100, Math.round((_xp-_lvl.xpNeeded)/(_next.xpNeeded-_lvl.xpNeeded)*100)) : 100;
@@ -2964,7 +2967,47 @@ function gmCheckProgress(anchorEl) {
       const todayXP = calcXPForDate(new Date().toISOString().slice(0,10));
       if (todayXP > 0) gmSpawnFloat(Math.max(1, Math.round(todayXP/20)), anchorEl);
     }
+    // Mantém o widget XP da sidebar sempre sincronizado
+    renderSidebarXP();
   } catch(e) { console.warn('gmCheckProgress error:', e); }
+}
+
+// ── Sidebar XP widget (sincroniza nível, XP e streak) ──
+function renderSidebarXP() {
+  try {
+    const xp     = calcXP();
+    const lvl    = calcLevel(xp);
+    const next   = calcNextLevel(xp);
+    const streak = calcStreak();
+
+    // Progresso dentro do nível atual (% até o próximo)
+    const span = next.xpNeeded - lvl.xpNeeded;
+    const pct  = span > 0 ? Math.max(0, Math.min(100, Math.round((xp - lvl.xpNeeded) / span * 100))) : 100;
+
+    // Badge numérico + cor do tier (bronze/silver/gold/plat)
+    const badgeEl = document.getElementById('sb-level');
+    if (badgeEl) {
+      badgeEl.textContent = lvl.lvl;
+      badgeEl.className = 'level-badge ' + lvl.badge;
+    }
+    const lblEl = document.getElementById('sb-level-label');
+    if (lblEl) lblEl.textContent = lvl.name;
+
+    const xpLblEl = document.getElementById('sb-xp-label');
+    if (xpLblEl) {
+      xpLblEl.textContent = lvl.lvl >= LEVEL_THRESHOLDS[LEVEL_THRESHOLDS.length-1].lvl
+        ? xp.toLocaleString() + ' XP · MAX'
+        : xp.toLocaleString() + ' / ' + next.xpNeeded.toLocaleString() + ' XP';
+    }
+
+    const barEl = document.getElementById('sb-xp-bar');
+    if (barEl) barEl.style.width = pct + '%';
+
+    const streakNum = document.getElementById('sb-streak-num');
+    if (streakNum) streakNum.textContent = streak;
+    const streakChip = document.getElementById('sb-streak');
+    if (streakChip) streakChip.style.opacity = streak > 0 ? '1' : '0.45';
+  } catch(e) { console.warn('renderSidebarXP error:', e); }
 }
 
 // ── HELPERS ──

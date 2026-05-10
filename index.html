@@ -1881,19 +1881,22 @@ function renderDashboard() {
 
 // Configuração do usuário
 const CRON_CFG = {
-  inicio: new Date('2026-04-22T12:00:00'),
-  // Rampa progressiva: { wd = seg-sex (min), sat = sábado (min) }
-  // Semanas 1-3: 1h/dia · Semana 4: 1h30 · Semana 5: 2h · Semana 6: 2h45
-  // Semana 7: 3h30 · Semana 8+: 4h30 (regime pleno)
+  // ─────────────────────────────────────────────────────────────
+  //  RECOMEÇO — 11/05/2026 (segunda-feira)
+  //  Rampa gentil para recriar hábito após semana de pausa.
+  //  · Sem 1-2: 2h–2h30/dia (recuperação)
+  //  · Sem 3+:  3h/dia       (regime sustentável)
+  //  Domingo continua zerado (ritual semanal + descanso).
+  //
+  //  Histórico anterior (22/04–10/05) preservado em
+  //  CRON_STATE.checks e em DATA.sessions/questions.
+  // ─────────────────────────────────────────────────────────────
+  inicio: new Date('2026-05-11T12:00:00'),
+  // Rampa: { wd = seg-sex (min), sat = sábado (min) }
   ramp: [
-    {wd: 60,  sat:  60},  // semana 1  (22/04)
-    {wd: 60,  sat:  60},  // semana 2  (29/04)
-    {wd: 60,  sat:  60},  // semana 3  (06/05)
-    {wd: 90,  sat: 105},  // semana 4  (13/05) — 1h30 / 1h45
-    {wd: 120, sat: 150},  // semana 5  (20/05) — 2h / 2h30
-    {wd: 165, sat: 195},  // semana 6  (27/05) — 2h45 / 3h15
-    {wd: 210, sat: 240},  // semana 7  (03/06) — 3h30 / 4h
-    {wd: 270, sat: 270},  // semana 8+ (10/06) — 4h30 (pleno)
+    {wd: 120, sat: 120},  // semana 1  (11/05) — 2h
+    {wd: 150, sat: 150},  // semana 2  (18/05) — 2h30
+    {wd: 180, sat: 180},  // semana 3+ (25/05) — 3h (estável)
   ],
   // Retorna os minutos do dia com base na semana do cronograma
   getMinDia(date) {
@@ -2014,14 +2017,40 @@ function cronBlocosDia(date) {
     return blocks;
   }
 
-  // ── Dias com carga intermediária e plena ──
+  // ── 61-150 min/dia: recuperação de hábito (rampa 2h–2h30) ──
+  // Foco: doutrina principal + questões + lei seca leve + juris quando couber.
+  if (minTot <= 150) {
+    const discDia = seq[0];
+    const nxt     = cronGetNextSub(discDia.id);
+    blocks.push(mk('especial','leiseca','Lei Seca do Dia','[Selecione a legislação manualmente]', 20, 'Legislação 360 / Leg. Coordenada'));
+    blocks.push(mk('principal','doutrina', discDia.nome, nxt.sub, 50, 'G7 Jurídico + Anotações ('+discDia.id+'-'+(nxt.idx+1)+')'));
+    blocks.push(mk('principal','questoes','QConcursos — '+discDia.nome,'Fixação da matéria estudada hoje', 25, 'QConcursos'));
+
+    if (isSab) {
+      // Sábado: simulado curto em vez de Dizer
+      const minSim = Math.max(30, minTot - 95);
+      blocks.push(mk('principal','simulado','Simulado Semanal (curto)','Questões das matérias da semana', minSim, 'Simulados PGE — CESPE/FCC/VUNESP'));
+      return blocks;
+    }
+
+    const resto = minTot - 95; // já usados: 20 + 50 + 25
+    if (resto >= 10) {
+      const minJ = Math.min(resto, 35);
+      const pag  = Math.max(1, Math.round(minJ / 3));
+      blocks.push(mk('principal','juris','Dizer o Direito','Informativo semanal — ~'+pag+' págs. (3 min/pág)', minJ, 'Informativos STJ/STF'));
+    }
+    return blocks;
+  }
+
+  // ── Dias com carga intermediária e plena (>150 min) ──
   const discOntem = cronGetDiscOntem(date);
   blocks.push(mk('especial','leiseca','Lei Seca do Dia','[Selecione a legislação manualmente]', 30, 'Legislação 360 / Leg. Coordenada'));
   blocks.push(mk('especial','questoes-ls','Questões · Decorando Lei Seca','Fixação do bloco de lei seca anterior', 15, 'Decorando a Lei Seca'));
   blocks.push(mk('principal','questoes','QConcursos — '+discOntem,'Questões sobre a matéria de ontem', 30, 'QConcursos'));
 
   if (isSab) {
-    const minSim = minTot - 45;
+    // Simulado: o que sobra após a manhã (75min). Bug antigo "−45" causava +30min órfãos.
+    const minSim = Math.max(60, minTot - 75);
     blocks.push(mk('principal','simulado','Simulado Semanal','Questões de concursos de Procuradoria Estadual', minSim, 'Simulados PGE — CESPE/FCC/VUNESP'));
     return blocks;
   }
@@ -2032,14 +2061,20 @@ function cronBlocosDia(date) {
   const minJuris    = minTarde - minDoutrina;
   const blocosDout  = Math.min(3, Math.floor(minDoutrina / 50));
 
+  let alocadoDout = 0;
   for (let b = 0; b < blocosDout; b++) {
     const disc = seq[b % seq.length];
     const nxt  = cronGetNextSub(disc.id);
     blocks.push(mk('principal','doutrina', disc.nome, nxt.sub, 50, 'G7 Jurídico + Anotações ('+disc.id+'-'+(nxt.idx+1)+')'));
+    alocadoDout += 50;
   }
 
-  const paginasJuris = Math.round(Math.min(minJuris, 35) / 3);
-  blocks.push(mk('principal','juris','Dizer o Direito','Informativo semanal — ~'+paginasJuris+' págs. (3 min/pág)', Math.min(minJuris,35), 'Informativos STJ/STF'));
+  // Minutos órfãos da doutrina (resto < 50 que não virou bloco) + cap do juris:
+  // realocamos no bloco de jurisprudência para fechar minTot conforme rampa.
+  const sobraDout    = Math.max(0, minDoutrina - alocadoDout);
+  const minJurisFinal = Math.min(minJuris + sobraDout, 60);
+  const paginasJuris  = Math.max(1, Math.round(minJurisFinal / 3));
+  blocks.push(mk('principal','juris','Dizer o Direito','Informativo semanal — ~'+paginasJuris+' págs. (3 min/pág)', minJurisFinal, 'Informativos STJ/STF'));
 
   return blocks;
 }
